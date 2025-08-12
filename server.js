@@ -1,37 +1,54 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
-const fs = require('fs');
 const path = require('path');
-
+const sqlite3 = require('sqlite3').verbose();
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
-// Percorso database (nella cartella locale del progetto)
-const DB_FILE = path.join(__dirname, 'data', 'db.sqlite');
-
-// Crea la cartella ./data se non esiste
-const dbDir = path.dirname(DB_FILE);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
-
-// Connessione al database
-const db = new sqlite3.Database(DB_FILE, (err) => {
-  if (err) {
-    console.error('Errore apertura DB:', err.message);
-    process.exit(1);
-  }
-  console.log('Database SQLite connesso.');
+// Connessione al database (file 'school.db' nella root del progetto)
+const db = new sqlite3.Database('./school.db', (err) => {
+    if (err) {
+        console.error('Errore nella connessione al database:', err.message);
+    } else {
+        console.log('Connessione al database riuscita');
+    }
 });
 
 // Middleware
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
+// === NUOVO ENDPOINT PER MEDIA E SITUAZIONE STUDENTE ===
+app.get('/api/students/:id/summary', (req, res) => {
+    const studentId = req.params.id;
+
+    db.get(
+        `SELECT AVG(grade) AS average FROM grades WHERE student_id = ?`,
+        [studentId],
+        (err, avgRow) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            db.all(
+                `SELECT subject, grade FROM grades WHERE student_id = ?`,
+                [studentId],
+                (err, grades) => {
+                    if (err) return res.status(500).json({ error: err.message });
+
+                    res.json({
+                        average: avgRow.average,
+                        grades: grades
+                    });
+                }
+            );
+        }
+    );
+});
+
+// Esempio home route
 app.get('/', (req, res) => {
-  res.send('Gestionale scolastico attivo 🚀');
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Avvio server
-app.listen(port, () => {
-  console.log(`Server in ascolto su http://localhost:${port}`);
+app.listen(PORT, () => {
+    console.log(`Server avviato su http://localhost:${PORT}`);
 });
