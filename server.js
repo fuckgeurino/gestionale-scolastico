@@ -6,10 +6,10 @@ const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Percorso database
-const DB_FILE = process.env.DB_FILE || '/data/db.sqlite';
+// Percorso database (nella cartella locale del progetto)
+const DB_FILE = path.join(__dirname, 'data', 'db.sqlite');
 
-// Assicurati che la cartella /data esista
+// Crea la cartella ./data se non esiste
 const dbDir = path.dirname(DB_FILE);
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
@@ -19,12 +19,12 @@ if (!fs.existsSync(dbDir)) {
 const db = new sqlite3.Database(DB_FILE, (err) => {
   if (err) {
     console.error('Errore apertura DB:', err.message);
-    process.exit(1); // Stop se il DB non si apre
+    process.exit(1);
   }
   console.log('Database SQLite connesso.');
 });
 
-// Middleware e rotte
+// Middleware
 app.use(express.json());
 
 app.get('/', (req, res) => {
