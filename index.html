@@ -1,0 +1,231 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Gestionale Scolastico — Full</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 1000px; margin: 20px auto; padding: 10px; }
+    input, button, select, textarea { padding: 8px; margin: 6px 0; }
+    .card{ border:1px solid #ddd; padding:12px; margin:8px 0; border-radius:6px; }
+    header{ display:flex; justify-content:space-between; align-items:center; }
+    nav button{ margin-left:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Gestionale Scolastico</h1>
+    <div id="userBox"></div>
+  </header>
+
+  <div id="auth" class="card">
+    <h2>Login</h2>
+    <input id="email" placeholder="email"/><br/>
+    <input id="password" placeholder="password" type="password"/><br/>
+    <button onclick="login()">Accedi</button>
+    <p>Default admin: <code>admin@scuola.local</code> / <code>admin123</code></p>
+    <hr/>
+    <h3>Registrazione famiglia</h3>
+    <input id="reg_email" placeholder="email"/><br/>
+    <input id="reg_name" placeholder="nome genitore"/><br/>
+    <input id="reg_password" placeholder="password" type="password"/><br/>
+    <button onclick="registerFamily()">Registrati come famiglia</button>
+  </div>
+
+  <div id="app" style="display:none;">
+    <nav class="card">
+      <span id="roleLabel"></span>
+      <button onclick="showSection('students')">Studenti</button>
+      <button onclick="showSection('announcements')">Bacheca</button>
+      <button onclick="showSection('mychildren')">Miei figli</button>
+      <button onclick="showSection('users')">Utenti</button>
+      <button onclick="logout()">Esci</button>
+    </nav>
+
+    <div id="students" class="card" style="display:none;">
+      <h3>Studenti</h3>
+      <div id="studentsList"></div>
+      <h4>Aggiungi studente</h4>
+      <input id="s_first" placeholder="Nome"/> <input id="s_last" placeholder="Cognome"/>
+      <input id="s_class" placeholder="Classe"/>
+      <button onclick="addStudent()">Aggiungi</button>
+    </div>
+
+    <div id="announcements" class="card" style="display:none;">
+      <h3>Bacheca</h3>
+      <div id="announcementsList"></div>
+      <h4>Nuovo avviso</h4>
+      <input id="a_title" placeholder="Titolo"/><br/>
+      <textarea id="a_text" placeholder="Testo" rows="3" style="width:100%"></textarea><br/>
+      <button onclick="postAnnouncement()">Pubblica</button>
+    </div>
+
+    <div id="mychildren" class="card" style="display:none;">
+      <h3>I miei figli</h3>
+      <div id="childrenList"></div>
+    </div>
+
+    <div id="users" class="card" style="display:none;">
+      <h3>Utenti (admin)</h3>
+      <div id="usersList"></div>
+      <h4>Crea utente</h4>
+      <input id="u_email" placeholder="email"/><input id="u_name" placeholder="nome"/><select id="u_role"><option value="TEACHER">Teacher</option><option value="FAMILY">Family</option></select>
+      <input id="u_password" placeholder="password"/><button onclick="createUser()">Crea</button>
+      <h4>Link famiglia a studente</h4>
+      <input id="link_user" placeholder="userId"/><input id="link_student" placeholder="studentId"/><input id="link_relation" placeholder="relation"/><button onclick="linkFamily()">Link</button>
+    </div>
+  </div>
+
+<script>
+function authHeaders(){ const t = localStorage.getItem('token'); return { 'Authorization': 'Bearer '+t, 'Content-Type':'application/json' }; }
+
+function setUser(user, token){
+  localStorage.setItem('token', token);
+  localStorage.setItem('user', JSON.stringify(user));
+  document.getElementById('auth').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('userBox').innerHTML = '<strong>'+user.name+'</strong> ('+user.role+')';
+  document.getElementById('roleLabel').innerText = user.role;
+  showSection('announcements');
+  if(user.role === 'FAMILY') showSection('mychildren');
+}
+
+function login(){
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  fetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email,password})})
+    .then(r=>r.json()).then(data=>{
+      if (data.token) setUser(data.user, data.token);
+      else alert(data.error || 'Errore');
+    }).catch(e=>alert('Errore: '+e));
+}
+
+function registerFamily(){
+  const email = document.getElementById('reg_email').value;
+  const name = document.getElementById('reg_name').value;
+  const password = document.getElementById('reg_password').value;
+  fetch('/api/register_family', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email,password,name})})
+    .then(r=>r.json()).then(data=>{
+      if (data.token) setUser(data.user, data.token);
+      else alert(data.error || 'Errore');
+    }).catch(e=>alert('Errore: '+e));
+}
+
+function logout(){
+  localStorage.removeItem('token'); localStorage.removeItem('user');
+  document.getElementById('auth').style.display='block';
+  document.getElementById('app').style.display='none';
+  document.getElementById('userBox').innerHTML='';
+}
+
+// sections
+function showSection(id){
+  ['students','announcements','mychildren','users'].forEach(s=> document.getElementById(s).style.display='none');
+  document.getElementById(id).style.display='block';
+  if (id === 'students') loadStudents();
+  if (id === 'announcements') loadAnnouncements();
+  if (id === 'mychildren') loadMyChildren();
+  if (id === 'users') loadUsers();
+}
+
+// students
+function loadStudents(){
+  fetch('/api/students', {headers: authHeaders()}).then(r=>r.json()).then(list=>{
+    const el = document.getElementById('studentsList'); el.innerHTML='';
+    list.forEach(s=>{
+      const d = document.createElement('div'); d.className='card';
+      d.innerHTML = `<strong>${s.firstName} ${s.lastName}</strong> — Classe: ${s.class || ''} — ID:${s.id}
+        <br/><button onclick="showStudent(${s.id})">Dettaglio</button>`;
+      el.appendChild(d);
+    });
+  });
+}
+function addStudent(){
+  const first = document.getElementById('s_first').value;
+  const last = document.getElementById('s_last').value;
+  const cls = document.getElementById('s_class').value;
+  fetch('/api/students', {method:'POST', headers: authHeaders(), body: JSON.stringify({firstName:first,lastName:last,class:cls})})
+    .then(r=>r.json()).then(()=> loadStudents());
+}
+function showStudent(id){
+  fetch('/api/students/'+id, {headers: authHeaders()}).then(r=>r.json()).then(s=>{
+    const win = window.open(); win.document.write('<h1>'+s.firstName+' '+s.lastName+'</h1><pre>'+JSON.stringify(s,0,2)+'</pre>');
+  });
+}
+
+// announcements
+function loadAnnouncements(){
+  fetch('/api/announcements', {headers: authHeaders()}).then(r=>r.json()).then(rows=>{
+    const el = document.getElementById('announcementsList'); el.innerHTML='';
+    rows.forEach(a=>{
+      const d = document.createElement('div'); d.className='card';
+      d.innerHTML = `<strong>${a.title}</strong><br/>${a.text}<br/><small>${new Date(a.createdAt).toLocaleString()}</small>`;
+      el.appendChild(d);
+    });
+  });
+}
+function postAnnouncement(){
+  const title = document.getElementById('a_title').value;
+  const text = document.getElementById('a_text').value;
+  fetch('/api/announcements', {method:'POST', headers: authHeaders(), body: JSON.stringify({title,text})})
+    .then(r=>r.json()).then(()=> { loadAnnouncements(); document.getElementById('a_title').value=''; document.getElementById('a_text').value=''; });
+}
+
+// users
+function loadUsers(){
+  fetch('/api/users', {headers: authHeaders()}).then(r=>r.json()).then(list=>{
+    const el = document.getElementById('usersList'); el.innerHTML='';
+    list.forEach(u=>{
+      const d = document.createElement('div');
+      d.innerText = `${u.id} — ${u.email} — ${u.role}`;
+      el.appendChild(d);
+    });
+  });
+}
+function createUser(){
+  const email = document.getElementById('u_email').value;
+  const name = document.getElementById('u_name').value;
+  const role = document.getElementById('u_role').value;
+  const password = document.getElementById('u_password').value;
+  fetch('/api/register', {method:'POST', headers: authHeaders(), body: JSON.stringify({email,password,role,name})}).then(r=>r.json()).then(()=> loadUsers());
+}
+function linkFamily(){
+  const userId = document.getElementById('link_user').value;
+  const studentId = document.getElementById('link_student').value;
+  const relation = document.getElementById('link_relation').value;
+  fetch('/api/families/link', {method:'POST', headers: authHeaders(), body: JSON.stringify({userId,studentId,relation})}).then(r=>r.json()).then(()=> alert('Collegato'));
+}
+
+// family: children
+function loadMyChildren(){
+  fetch('/api/family/students', {headers: authHeaders()}).then(r=>r.json()).then(list=>{
+    const el = document.getElementById('childrenList'); el.innerHTML='';
+    list.forEach(s=>{
+      const d = document.createElement('div'); d.className='card';
+      d.innerHTML = `<strong>${s.firstName} ${s.lastName}</strong> — Classe: ${s.class || ''} — ID:${s.id}
+        <br/><button onclick="showStudent(${s.id})">Vedi dettagli</button>
+        <button onclick="loadGrades(${s.id})">Voti</button><div id="grades_${s.id}"></div>`;
+      el.appendChild(d);
+    });
+  });
+}
+
+function loadGrades(studentId){
+  fetch('/api/students/'+studentId+'/grades', {headers: authHeaders()}).then(r=>r.json()).then(rows=>{
+    const el = document.getElementById('grades_'+studentId); el.innerHTML='';
+    rows.forEach(g=>{
+      const d = document.createElement('div'); d.innerText = `${g.subject} — ${g.type} — ${g.score} (da ${g.teacherName || 'sconosciuto'})`;
+      el.appendChild(d);
+    });
+  });
+}
+
+// on load restore
+window.addEventListener('load', ()=>{
+  const t = localStorage.getItem('token');
+  const u = localStorage.getItem('user');
+  if (t && u) setUser(JSON.parse(u), t);
+});
+</script>
+</body>
+</html>
